@@ -1,0 +1,15 @@
+{
+  "name": "hello-pubsub",
+  "version": "1.0.0",
+  "dependencies": {
+    "debug": "^3.1.0",
+    "dotenv": "^6.0.0",
+    "ipfs": "^0.31.4",
+    "node-rsa": "^1.0.1",
+    "restify": "^7.2.1",
+    "uuid": "^3.3.2"
+  },
+  "devDependencies": {
+    "random-words": "^1.1.0"
+  }
+}
