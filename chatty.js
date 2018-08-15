@@ -6,26 +6,28 @@ const path = require('path');
 const IPFS = require('ipfs');
 const randomwords = require('random-words');
 
+const Connectors = require('./lib/connectors');
+
 const Room = require('./lib/room');
-const RoomEvents = require('./lib/constants/room-events');
+const RoomEvents = require('./lib/constants/roomEvents');
 
 
 const workerEvents = {
-  SUBSCRIBED: 'SUBSCRIBED',
+  SUBSCRIBED: 'JOIN',
   MESSAGE: 'MESSAGE',
 }
 
 if (cluster.isMaster) {
-  const debug = require('debug')('chatty:master');
+  const log = require('./lib/utils/log')('chatty-master');
 
-  debug('Master started: #%s', process.pid);
+  log.debug('Master started: #%s', process.pid);
 
   const workerCount = process.env.WORKER_COUNT && process.env.WORKER_COUNT !== '-1' ? parseInt(process.env.WORKER_COUNT) : require('os').cpus().length;
 
-  debug('Starting %s workers', workerCount);
+  log.debug('Starting %s workers', workerCount);
 
   for (let i = 0; i < workerCount; i++) {
-    debug('Worker %s started', i);
+    log.debug('Worker %s started', i);
     cluster.fork();
   }
 
@@ -33,10 +35,10 @@ if (cluster.isMaster) {
     cluster.workers[id].on('message', message => {
       switch (message.event) {
         case workerEvents.SUBSCRIBED:
-          debug('Worker %s Subscribed: %O', id, message.payload.peerId.id);
+          log.trace('Worker %s Subscribed: %O', id, message.payload.peerId.id);
           break;
         case workerEvents.MESSAGE:
-          debug('Worker %s sent: %s', id, message.payload.message);
+          log.trace('Worker %s sent: %s', id, message.payload.message);
           break;
       }
     });
@@ -47,8 +49,9 @@ if (cluster.isMaster) {
   });
 }
 else {
-  const debug = require('debug')('chatty:' + process.pid);
-  debug('Starting IPFS...');
+  const log = require('./lib/utils/log')('chatty-' + process.pid);
+
+  log.debug('Starting IPFS...');
 
   //
   // HELPER
@@ -60,7 +63,7 @@ else {
   //
   // IPFS
 
-  const ipfs = new IPFS({
+  const ipfsConnector = Connectors.create(Connectors.types.IPFS, new IPFS({
     EXPERIMENTAL: {
       pubsub: true
     },
@@ -72,10 +75,10 @@ else {
         ]
       }
     }
-  });
+  }));
 
-  ipfs.on('ready', () => {
-    debug('IPFS Ready');
+  ipfsConnector.on('ready', () => {
+    log.debug('IPFS Ready');
 
     const roomOptions = {
       key: process.env.KEY,
@@ -84,13 +87,12 @@ else {
       publicKey: path.join(__dirname, '.certs', 'public.pem'),
     };
 
-    const room = new Room(ipfs, process.env.ROOM_NAME, roomOptions);
-    room.start();
+    const room = new Room(ipfsConnector, process.env.ROOM_NAME, roomOptions);
 
-    room.on(RoomEvents.SUBSCRIBED, (topic) => {
-      debug('IPFS Subscribed to %s', topic);
+    room.on(RoomEvents.JOIN, (topic) => {
+      log.debug('IPFS Subscribed to %s', topic);
 
-      ipfs.id(function (err, peerId) {
+      this.ipfs.id((err, peerId) => {
         if (err) {
           throw err
         }
@@ -104,8 +106,14 @@ else {
       }, Math.random() * 20000 + 5000);
     });
 
-    room.on(RoomEvents.ERROR, (err) => {
-      console.log('Error!', err);
+    room.on(RoomEvents.MESSAGE, (topic) => {
+      log.debug('Got Message');
     });
+
+    room.on(RoomEvents.ERROR, (err) => {
+      log.error('Error!', err);
+    });
+
+    room.start();
   });
 }

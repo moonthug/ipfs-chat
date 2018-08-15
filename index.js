@@ -5,10 +5,11 @@ const path = require('path');
 const IPFS = require('ipfs');
 const restify = require('restify');
 
+const Connectors = require('./lib/connectors');
 const Room = require('./lib/room');
-const RoomEvents = require('./lib/constants/room-events');
+const RoomEvents = require('./lib/constants/roomEvents');
 
-const debug = require('debug')('hello-pubsub');
+const log = require('./lib/utils/log')('index');
 
 
 //
@@ -17,19 +18,19 @@ const debug = require('debug')('hello-pubsub');
 let room;
 
 
-let log = [];
+let messageLog = [];
 const addToLog = (message) => {
-  log.push({ date: Date.now(), message });
+  messageLog.push({ date: Date.now(), message });
 
-  if(log.length > 10) {
-    log = log.splice(1);
+  if(messageLog.length > 10) {
+    messageLog = messageLog.splice(1);
   }
 }
 
 //
 // IPFS
 
-const ipfs = new IPFS({
+const ipfsConnector = Connectors.create(Connectors.types.IPFS, new IPFS({
   EXPERIMENTAL: {
     pubsub: true
   },
@@ -41,10 +42,10 @@ const ipfs = new IPFS({
       ]
     }
   }
-});
+}));
 
-ipfs.on('ready', () => {
-  debug('IPFS Ready!');
+ipfsConnector.on('ready', () => {
+  log.debug('IPFS Ready!');
 
   const roomOptions = {
     key: process.env.KEY,
@@ -53,18 +54,18 @@ ipfs.on('ready', () => {
     publicKey: path.join(__dirname, '.certs', 'public.pem'),
   };
 
-  room = new Room(ipfs, process.env.ROOM_NAME, roomOptions);
+  room = new Room(ipfsConnector, process.env.ROOM_NAME, roomOptions);
   room.start();
 
-  // room.on(RoomEvents.PEER_UPDATE, (peers) => {
+  // room.on(RoomEvents.USER_UPDATE, (peers) => {
   //   console.log('Peers', peers.length);
   // });
 
-  room.on(RoomEvents.PEER_JOIN, (peers) => {
+  room.on(RoomEvents.USER_JOIN, (peers) => {
     console.log('Peer(s) joined the room', peers.length);
   });
 
-  room.on(RoomEvents.PEER_LEAVE, (peers) => {
+  room.on(RoomEvents.USER_LEAVE, (peers) => {
     console.log('Peer(s) left the room', peers.length);
   });
 
@@ -73,8 +74,8 @@ ipfs.on('ready', () => {
     addToLog(message);
   });
 
-  room.on(RoomEvents.SUBSCRIBED, (topic) => {
-    debug('IPFS Subscribed to %s', topic);
+  room.on(RoomEvents.JOIN, (topic) => {
+    log.debug('IPFS Subscribed to %s', topic);
   });
 
   room.on(RoomEvents.ERROR, (err) => {
@@ -82,8 +83,8 @@ ipfs.on('ready', () => {
   });
 });
 
-ipfs.on('error', err => {
-  debug(err);
+ipfsConnector.on('error', err => {
+  log.debug(err);
 });
 
 
@@ -109,7 +110,7 @@ server.get('/status', function (req, res, next) {
       name: room.name,
       peerCount: room.peers.length,
       peers: room.peers,
-      log: log
+      log: messageLog
     }
   });
 
@@ -117,5 +118,5 @@ server.get('/status', function (req, res, next) {
 });
 
 server.listen(4000, function () {
-  debug('%s listening at %s', server.name, server.url);
+  log.debug('%s listening at %s', server.name, server.url);
 });
